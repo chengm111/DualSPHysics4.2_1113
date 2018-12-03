@@ -29,8 +29,6 @@
 //:# - Error corregido: Reescribia fichero cuando ya estaba cerrado pos SaveData(). (02-03-2018)
 //:# - Opcion para activar o no el uso de SetSeparators((). (12-03-2018)
 //:# - Control de excepciones en el destructor. (21-03-2018)
-//:# - Nuevo metodo GetAppendMode() para saber si se va ampliar un fichero existente. (06-07-2018)
-//:# - Error corregido en SaveData() por el que siempre se grababa el head. (13-08-2018)
 //:#############################################################################
 
 /// \file JSaveCsv2.h \brief Declares the class \ref JSaveCsv2.
@@ -143,7 +141,6 @@ private:
   const bool CsvSepComa;   ///<Separator character in CSV files (0=semicolon, 1=coma).
 
   std::fstream *Pf;
-  bool AppendMode;         ///<File already exists and was opened to append data.
   bool FirstSaveData;
 
   bool AutoSepEnable; ///<Enable or disable auto separator change according configuration (def=true).
@@ -178,7 +175,6 @@ public:
   void Reset();
 
   std::string GetFileName()const{ return(FileName); }
-  bool GetAppendMode()const{ return(AppendMode); }
 
   const std::string& GetFmtDefault(TpFormat tfmt)const{ return(FmtDefault[tfmt]); };
   const std::string& GetFmtCurrent(TpFormat tfmt)const{ return(FmtCurrent[tfmt]); };

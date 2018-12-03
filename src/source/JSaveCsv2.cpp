@@ -59,7 +59,6 @@ JSaveCsv2::~JSaveCsv2(){
 //==============================================================================
 void JSaveCsv2::Reset(){
   delete Pf; Pf=NULL;
-  AppendMode=false;
   FileName="";
   FirstSaveData=true;
   AutoSepEnable=true;
@@ -84,10 +83,7 @@ void JSaveCsv2::OpenFile(){
     if(!(*Pf)){
       RunException(met,"File could not be opened.",FileName);
     }
-    if(App && fexists){
-      AppendMode=true;
-      Pf->seekp(0,Pf->end);
-    }
+    if(App && fexists)Pf->seekp(0,Pf->end);
   }
 }
 
@@ -245,7 +241,7 @@ void JSaveCsv2::SaveData(bool closefile){
   const char met[]="SaveData";
   if(FirstSaveData || !Data.empty()){
     if(Pf==NULL)OpenFile();
-    if(FirstSaveData && !AppendMode)Save(Head);
+    if(FirstSaveData)Save(Head);
     Save(Data);
     Data="";
     FirstSaveData=false;

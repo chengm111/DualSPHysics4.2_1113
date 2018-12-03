@@ -23,7 +23,6 @@
 #include "Functions.h"
 #include "JPartDataHead.h"
 #include "JSphMk.h"
-#include "JSphPartsInit.h"
 #include "JPartsLoad4.h"
 #include "JSphMotion.h"
 #include "JXml.h"
@@ -56,7 +55,6 @@ using std::endl;
 //==============================================================================
 JSph::JSph(bool cpu,bool withmpi):Cpu(cpu),WithMpi(withmpi){
   ClassName="JSph";
-  DgNum=0;
   DataBi4=NULL;
   DataOutBi4=NULL;
   DataFloatBi4=NULL;
@@ -67,7 +65,6 @@ JSph::JSph(bool cpu,bool withmpi):Cpu(cpu),WithMpi(withmpi){
   SaveDt=NULL;
   TimeOut=NULL;
   MkInfo=NULL;
-  PartsInit=NULL;
   SphMotion=NULL;
   FtObjs=NULL;
   DemData=NULL;
@@ -93,7 +90,6 @@ JSph::~JSph(){
   delete SaveDt;        SaveDt=NULL;
   delete TimeOut;       TimeOut=NULL;
   delete MkInfo;        MkInfo=NULL;
-  delete PartsInit;     PartsInit=NULL;
   delete SphMotion;     SphMotion=NULL;
   AllocMemoryFloating(0);
   delete[] DemData;     DemData=NULL;
@@ -122,7 +118,6 @@ void JSph::InitVars(){
   DirDataOut=""; 
   FileXml="";
   TStep=STEP_None;
-  InterStep=INTERSTEP_None;
   VerletSteps=40;
   TKernel=KERNEL_Wendland;
   Awen=Bwen=Agau=Bgau=0;
@@ -157,6 +152,7 @@ void JSph::InitVars(){
   CasePosMin=CasePosMax=TDouble3(0);
   CaseNp=CaseNbound=CaseNfixed=CaseNmoving=CaseNfloat=CaseNfluid=CaseNpb=0;
 
+  memset(&PeriodicConfig,0,sizeof(StPeriodic));
   PeriActive=0; PeriX=PeriY=PeriZ=false;
   PeriXinc=PeriYinc=PeriZinc=TDouble3(0);
 
@@ -167,11 +163,11 @@ void JSph::InitVars(){
 
   FtCount=0;
   FtPause=0;
-  FtMode=FTMODE_None;
   WithFloating=false;
 
   AllocMemoryFloating(0);
 
+  CellOrder=ORDER_None;
   CellMode=CELLMODE_None;
   Hdiv=0;
   Scell=0;
@@ -207,6 +203,20 @@ void JSph::InitVars(){
   VerletStep=0;
   SymplecticDtPre=0;
   DemDtForce=0;  //(DEM)
+
+  //=======================================================
+  //Initialization of Temperature
+  //=======================================================
+  HeatTransfer = false;
+  HeatCpFluid = 0;
+  HeatCpBound = 0;
+  HeatKFluid = 0;
+  HeatKBound = 0;
+  HeatTempBound = 0;
+  HeatTempFluid = 0;
+  MkConstTempWall = 0;
+  DensityBound = 0;
+  //========================================================
 }
 
 //==============================================================================
@@ -419,6 +429,7 @@ void JSph::LoadConfig(const JCfgRun *cfg){
   }
   else TimeOut->Config(FileXml,"case.execution.special.timeout",TimePart);
 
+  CellOrder=cfg->CellOrder;
   CellMode=cfg->CellMode;
   if(cfg->DomainMode==1){
     ConfigDomainParticles(cfg->DomainParticlesMin,cfg->DomainParticlesMax);
@@ -451,8 +462,8 @@ void JSph::LoadCaseConfig(){
     default: RunException(met,"PosDouble value is not valid.");
   }
   switch(eparms.GetValueInt("RigidAlgorithm",true,1)){ //(DEM)
-    case 1:  UseDEM=false;    break;
-    case 2:  UseDEM=true;     break;
+    case 1:  UseDEM=false;  break;
+    case 2:  UseDEM=true;   break;
     default: RunException(met,"Rigid algorithm is not valid.");
   }
   switch(eparms.GetValueInt("StepAlgorithm",true,1)){
@@ -644,71 +655,60 @@ void JSph::LoadCaseConfig(){
       }
     }
   }
-  else{
-    if(UseDEM){
-      UseDEM=false;
-      Log->PrintWarning("The use of DEM was disabled because there are no floating objects...");
-    }
-  }
-  WithFloating=(FtCount>0);
-  FtMode=(WithFloating? FTMODE_Sph: FTMODE_None);
-  if(UseDEM)FtMode=FTMODE_Ext;
+  else UseDEM=false;
 
-  //-Loads DEM data for boundary objects. (DEM)
+  //-Loads DEM data for the objects. (DEM)
   if(UseDEM){
-    if(UseDEM){
-      DemData=new StDemData[DemDataSize];
-      memset(DemData,0,sizeof(StDemData)*DemDataSize);
-    }
+    DemData=new StDemData[DemDataSize];
+    memset(DemData,0,sizeof(StDemData)*DemDataSize);
     for(unsigned c=0;c<parts.CountBlocks();c++){
       const JSpacePartBlock &block=parts.GetBlock(c);
       if(IsBound(block.Type)){
-        const word mkbound=block.GetMkType();
-        const unsigned cmk=MkInfo->GetMkBlockByMkBound(mkbound);
-        if(cmk>=MkInfo->Size())RunException(met,fun::PrintStr("Error loading boundary objects. Mkbound=%u is unknown.",mkbound));
-        const StDemData data=LoadDemData(UseDEM,UseDEM,&block);
-        if(UseDEM){
-          const unsigned tav=CODE_GetTypeAndValue(MkInfo->Mkblock(cmk)->Code); //:Log->Printf("___> tav[%u]:%u",cmk,tav);
-          DemData[tav]=data;
+        const unsigned cmk=MkInfo->GetMkBlockByMkBound(block.GetMkType());
+        if(cmk>=MkInfo->Size())RunException(met,fun::PrintStr("Error loading DEM objects. Mkbound=%u is unknown.",block.GetMkType()));
+        const unsigned tav=CODE_GetTypeAndValue(MkInfo->Mkblock(cmk)->Code);
+        //:Log->Printf("___> tav[%u]:%u",cmk,tav);
+        if(block.Type==TpPartFloating){
+          const JSpacePartBlock_Floating &fblock=(const JSpacePartBlock_Floating &)block;
+          DemData[tav].mass=(float)fblock.GetMassbody();
+          DemData[tav].massp=(float)(fblock.GetMassbody()/fblock.GetCount());
         }
+        else DemData[tav].massp=MassBound;
+        if(!block.ExistsSubValue("Young_Modulus","value"))RunException(met,fun::PrintStr("Object mk=%u - Value of Young_Modulus is invalid.",block.GetMk()));
+        if(!block.ExistsSubValue("PoissonRatio","value"))RunException(met,fun::PrintStr("Object mk=%u - Value of PoissonRatio is invalid.",block.GetMk()));
+        if(!block.ExistsSubValue("Kfric","value"))RunException(met,fun::PrintStr("Object mk=%u - Value of Kfric is invalid.",block.GetMk()));
+        if(!block.ExistsSubValue("Restitution_Coefficient","value"))RunException(met,fun::PrintStr("Object mk=%u - Value of Restitution_Coefficient is invalid.",block.GetMk()));
+        DemData[tav].young=block.GetSubValueFloat("Young_Modulus","value",true,0);
+        DemData[tav].poisson=block.GetSubValueFloat("PoissonRatio","value",true,0);
+        DemData[tav].tau=(DemData[tav].young? (1-DemData[tav].poisson*DemData[tav].poisson)/DemData[tav].young: 0);
+        DemData[tav].kfric=block.GetSubValueFloat("Kfric","value",true,0);
+        DemData[tav].restitu=block.GetSubValueFloat("Restitution_Coefficient","value",true,0);
+        if(block.ExistsValue("Restitution_Coefficient_User"))DemData[tav].restitu=block.GetValueFloat("Restitution_Coefficient_User");
       }
     }
   }
 
+  //====================================================
+  //Configuration of temperature parameters
+  //====================================================
+  TiXmlNode* tempNode = xml.GetNode("case.execution.special.temperature", false);
+  if (tempNode) {
+	  HeatTransfer = true;
+	  MkConstTempWall = xml.ReadElementInt(tempNode->ToElement(), "boundary", "mkbound");
+	  TiXmlNode* tempBoundNode = xml.GetNode("case.execution.special.temperature.boundary", false);
+	  HeatCpBound = xml.ReadElementFloat(tempBoundNode, "HeatCpBound", "value");
+	  HeatKBound = xml.ReadElementFloat(tempBoundNode, "HeatKBound", "value");
+	  HeatTempBound = xml.ReadElementFloat(tempBoundNode, "HeatTempBound", "value");
+	  DensityBound = xml.ReadElementFloat(tempBoundNode, "DensityBound", "value");
+	  TiXmlNode* tempFluidNode = xml.GetNode("case.execution.special.temperature.fluid", false);
+	  HeatCpFluid = xml.ReadElementFloat(tempFluidNode, "HeatCpFluid", "value");
+	  HeatKFluid = xml.ReadElementFloat(tempFluidNode, "HeatKFluid", "value");
+	  HeatTempFluid = xml.ReadElementFloat(tempFluidNode, "HeatTempFluid", "value");
+  }
+  //=====================================================
+
   NpMinimum=CaseNp-unsigned(PartsOutMax*CaseNfluid);
   Log->Print("**Basic case configuration is loaded");
-}
-
-//==============================================================================
-/// Loads coefficients used for DEM or Chrono objects.
-//==============================================================================
-StDemData JSph::LoadDemData(bool basicdata,bool extradata,const JSpacePartBlock* block)const{
-  const char met[]="LoadDemData";
-  const word mk=block->GetMk();
-  const word mkbound=block->GetMkType();
-  StDemData data;
-  memset(&data,0,sizeof(StDemData));
-  if(basicdata){
-    if(!block->ExistsSubValue("Kfric","value"))RunException(met,fun::PrintStr("Object mk=%u (mkbound=%u) - Value of Kfric is invalid.",mk,mkbound));
-    if(!block->ExistsSubValue("Restitution_Coefficient","value"))RunException(met,fun::PrintStr("Object mk=%u (mkbound=%u) - Value of Restitution_Coefficient is invalid.",mk,mkbound));
-    data.kfric=block->GetSubValueFloat("Kfric","value",true,0);
-    data.restitu=block->GetSubValueFloat("Restitution_Coefficient","value",true,0);
-    if(block->ExistsValue("Restitution_Coefficient_User"))data.restitu=block->GetValueFloat("Restitution_Coefficient_User");
-  }
-  if(extradata){
-    data.massp=MassBound;
-    if(block->Type==TpPartFloating){
-      const JSpacePartBlock_Floating *fblock=(const JSpacePartBlock_Floating *)block;
-      data.mass=(float)fblock->GetMassbody();
-      data.massp=(float)(fblock->GetMassbody()/fblock->GetCount());
-    }
-    if(!block->ExistsSubValue("Young_Modulus","value"))RunException(met,fun::PrintStr("Object mk=%u (mkbound=%u) - Value of Young_Modulus is invalid.",mk,mkbound));
-    if(!block->ExistsSubValue("PoissonRatio","value"))RunException(met,fun::PrintStr("Object mk=%u (mkbound=%u) - Value of PoissonRatio is invalid.",mk,mkbound));
-    data.young=block->GetSubValueFloat("Young_Modulus","value",true,0);
-    data.poisson=block->GetSubValueFloat("PoissonRatio","value",true,0);
-    data.tau=(data.young? (1-data.poisson*data.poisson)/data.young: 0);
-  }
-  return(data);
 }
 
 //==============================================================================
@@ -896,8 +896,7 @@ void JSph::VisuConfig()const{
     Log->Print(fun::VarStr("ShiftCoef",ShiftCoef));
     if(ShiftTFS)Log->Print(fun::VarStr("ShiftTFS",ShiftTFS));
   }
-  string rigidalgorithm=(!FtCount? "None": (UseDEM? "SPH+DCDEM": "SPH"));
-  Log->Print(fun::VarStr("RigidAlgorithm",rigidalgorithm));
+  Log->Print(fun::VarStr("RigidAlgorithm",(!FtCount? "None": (UseDEM? "SPH+DEM": "SPH"))));
   Log->Print(fun::VarStr("FloatingCount",FtCount));
   if(FtCount)Log->Print(fun::VarStr("FtPause",FtPause));
   Log->Print(fun::VarStr("CaseNp",CaseNp));
@@ -956,6 +955,23 @@ void JSph::VisuConfig()const{
     Log->Print(fun::VarStr("RhopOutMin",RhopOutMin));
     Log->Print(fun::VarStr("RhopOutMax",RhopOutMax));
   }
+
+  //================================================
+  //temperature:log configuration variables
+  //================================================
+  Log->Print(fun::VarStr("HeatTransfer", HeatTransfer));
+  if (HeatTransfer) {
+	  Log->Print(fun::VarStr("HeatCpFluid", HeatCpFluid));
+	  Log->Print(fun::VarStr("HeatCpBound", HeatCpBound));
+	  Log->Print(fun::VarStr("HeatKFluid", HeatKFluid));
+	  Log->Print(fun::VarStr("HeatKBound", HeatKBound));
+	  Log->Print(fun::VarStr("MkConstTempWall", MkConstTempWall));
+	  Log->Print(fun::VarStr("HeatTempBound", HeatTempBound));
+	  Log->Print(fun::VarStr("HeatTempFluid", HeatTempFluid));
+	  Log->Print(fun::VarStr("DensityBound", DensityBound));
+  }
+  //==================================================
+
   if(CteB==0)RunException(met,"Constant \'b\' cannot be zero.\n\'b\' is zero when fluid height is zero (or fluid particles were not created)");
 }
 
@@ -1026,23 +1042,106 @@ void JSph::RunInitialize(unsigned np,unsigned npb,const tdouble3 *pos,const unsi
 }
 
 //==============================================================================
-/// Creates PartsInit object with initial particle data for automatic 
-/// configurations.
-///
-/// Crea el objeto PartsInit con los datos iniciales de las particulas para 
-/// configuraciones automaticas.
+/// Configures CellOrder and adjusts order of components in data.
+/// Configura CellOrder y ajusta orden de componentes en datos.
 //==============================================================================
-void JSph::CreatePartsInit(unsigned np,const tdouble3 *pos,const typecode *code){
-  PartsInit=new JSphPartsInit(Simulate2D,Simulate2DPosY,Dp,MkInfo,np,pos,code);
+void JSph::ConfigCellOrder(TpCellOrder order,unsigned np,tdouble3* pos,tfloat4* velrhop){
+  //-Stores initial periodic configuration in PeriodicConfig.  
+  PeriodicConfig=StrPeriodic(PeriActive,PeriXinc,PeriYinc,PeriZinc);
+  //-Applies CellOrder.  
+  CellOrder=order;
+  if(CellOrder==ORDER_None)CellOrder=ORDER_XYZ;
+  if(Simulate2D&&CellOrder!=ORDER_XYZ&&CellOrder!=ORDER_ZYX)RunException("ConfigCellOrder","In 2D simulations the value of CellOrder must be XYZ or ZYX.");
+  Log->Print(fun::VarStr("CellOrder",string(GetNameCellOrder(CellOrder))));
+  if(CellOrder!=ORDER_XYZ){
+    RunException("ConfigCellOrder","Only CellOrder==ORDER_XYZ is allowed.");
+    //-Modifies initial particle data.
+    OrderCodeData(CellOrder,np,pos);
+    OrderCodeData(CellOrder,np,velrhop);
+    //-Modifies other constants.
+    Gravity=OrderCodeValue(CellOrder,Gravity);
+    MapRealPosMin=OrderCodeValue(CellOrder,MapRealPosMin);
+    MapRealPosMax=OrderCodeValue(CellOrder,MapRealPosMax);
+    MapRealSize=OrderCodeValue(CellOrder,MapRealSize);
+    Map_PosMin=OrderCodeValue(CellOrder,Map_PosMin);
+    Map_PosMax=OrderCodeValue(CellOrder,Map_PosMax);
+    Map_Size=OrderCodeValue(CellOrder,Map_Size);
+    //-Modifies periodic configuration. 
+    bool perix=PeriX,periy=PeriY,periz=PeriZ;
+    bool perixy=(perix && periy),perixz=(perix && periz),periyz=(periy && periz);
+    tdouble3 perixinc=PeriXinc,periyinc=PeriYinc,perizinc=PeriZinc;
+    tuint3 v={1,2,3};
+    v=OrderCode(v);
+    if(v.x==2){ PeriX=periy; PeriXinc=OrderCode(periyinc); }
+    if(v.x==3){ PeriX=periz; PeriXinc=OrderCode(perizinc); }
+    if(v.y==1){ PeriY=perix; PeriYinc=OrderCode(perixinc); }
+    if(v.y==3){ PeriY=periz; PeriYinc=OrderCode(perizinc); }
+    if(v.z==1){ PeriZ=perix; PeriZinc=OrderCode(perixinc); }
+    if(v.z==2){ PeriZ=periy; PeriZinc=OrderCode(periyinc); }
+    //if(perixy){
+    //  PeriXY=(CellOrder==ORDER_XYZ||CellOrder==ORDER_YXZ);
+    //  PeriXZ=(CellOrder==ORDER_XZY||CellOrder==ORDER_YZX);
+    //  PeriYZ=(CellOrder==ORDER_ZXY||CellOrder==ORDER_ZYX);
+    //}
+    //if(perixz){
+    //  PeriXY=(CellOrder==ORDER_XZY||CellOrder==ORDER_ZXY);
+    //  PeriXZ=(CellOrder==ORDER_XYZ||CellOrder==ORDER_ZYX);
+    //  PeriYZ=(CellOrder==ORDER_YXZ||CellOrder==ORDER_YZX);
+    //}
+    //if(periyz){
+    //  PeriXY=(CellOrder==ORDER_YZX||CellOrder==ORDER_ZYX);
+    //  PeriXZ=(CellOrder==ORDER_YXZ||CellOrder==ORDER_ZXY);
+    //  PeriYZ=(CellOrder==ORDER_XYZ||CellOrder==ORDER_XZY);
+    //}
+    PeriActive=DefPeriActive(PeriX,PeriY,PeriZ);
+  }
 }
 
 //==============================================================================
-/// Free memory of PartsInit.
-///
-/// Libera memoria de PartsInit.
+/// Converts pos[] and vel[] to the original dimension order.
+/// Convierte pos[] y vel[] al orden dimensional original.
 //==============================================================================
-void JSph::FreePartsInit(){
-  delete PartsInit; PartsInit=NULL;
+void JSph::DecodeCellOrder(unsigned np,tdouble3 *pos,tfloat3 *vel)const{
+  if(CellOrder!=ORDER_XYZ){
+    OrderDecodeData(CellOrder,np,pos);
+    OrderDecodeData(CellOrder,np,vel);
+  }
+}
+
+//==============================================================================
+/// Modifies order of components of an array of type tfloat3.
+/// Modifica orden de componentes de un array de tipo tfloat3.
+//==============================================================================
+void JSph::OrderCodeData(TpCellOrder order,unsigned n,tfloat3 *v){
+  if(order==ORDER_XZY)for(unsigned c=0;c<n;c++)v[c]=ReOrderXZY(v[c]);
+  if(order==ORDER_YXZ)for(unsigned c=0;c<n;c++)v[c]=ReOrderYXZ(v[c]);
+  if(order==ORDER_YZX)for(unsigned c=0;c<n;c++)v[c]=ReOrderYZX(v[c]);
+  if(order==ORDER_ZXY)for(unsigned c=0;c<n;c++)v[c]=ReOrderZXY(v[c]);
+  if(order==ORDER_ZYX)for(unsigned c=0;c<n;c++)v[c]=ReOrderZYX(v[c]);
+}
+
+//==============================================================================
+/// Modifies order of components of an array of type tdouble3.
+/// Modifica orden de componentes de un array de tipo tdouble3.
+//==============================================================================
+void JSph::OrderCodeData(TpCellOrder order,unsigned n,tdouble3 *v){
+  if(order==ORDER_XZY)for(unsigned c=0;c<n;c++)v[c]=ReOrderXZY(v[c]);
+  if(order==ORDER_YXZ)for(unsigned c=0;c<n;c++)v[c]=ReOrderYXZ(v[c]);
+  if(order==ORDER_YZX)for(unsigned c=0;c<n;c++)v[c]=ReOrderYZX(v[c]);
+  if(order==ORDER_ZXY)for(unsigned c=0;c<n;c++)v[c]=ReOrderZXY(v[c]);
+  if(order==ORDER_ZYX)for(unsigned c=0;c<n;c++)v[c]=ReOrderZYX(v[c]);
+}
+
+//==============================================================================
+/// Modifies order of components of an array of type tfloat4.
+/// Modifica orden de componentes de un array de tipo tfloat4.
+//==============================================================================
+void JSph::OrderCodeData(TpCellOrder order,unsigned n,tfloat4 *v){
+  if(order==ORDER_XZY)for(unsigned c=0;c<n;c++)v[c]=ReOrderXZY(v[c]);
+  if(order==ORDER_YXZ)for(unsigned c=0;c<n;c++)v[c]=ReOrderYXZ(v[c]);
+  if(order==ORDER_YZX)for(unsigned c=0;c<n;c++)v[c]=ReOrderYZX(v[c]);
+  if(order==ORDER_ZXY)for(unsigned c=0;c<n;c++)v[c]=ReOrderZXY(v[c]);
+  if(order==ORDER_ZYX)for(unsigned c=0;c<n;c++)v[c]=ReOrderZYX(v[c]);
 }
 
 //==============================================================================
@@ -1057,7 +1156,7 @@ void JSph::ConfigCellDivision(){
   //-Prints configuration.
   Log->Print(fun::VarStr("CellMode",string(GetNameCellMode(CellMode))));
   Log->Print(fun::VarStr("Hdiv",Hdiv));
-  Log->Print(string("MapCells=(")+fun::Uint3Str(Map_Cells)+")");
+  Log->Print(string("MapCells=(")+fun::Uint3Str(OrderDecode(Map_Cells))+")");
   //-Creates VTK file with map cells.
   if(SaveMapCellsVtkSize()<1024*1024*10)SaveMapCellsVtk(Scell);
   else Log->PrintWarning("File CfgInit_MapCells.vtk was not created because number of cells is too high.");
@@ -1101,7 +1200,7 @@ void JSph::SelecDomain(tuint3 celini,tuint3 celfin){
   DomCellCode=CalcCellCode(DomCells+TUint3(1));
   if(!DomCellCode)RunException(met,string("Failed to select a valid CellCode for ")+fun::UintStr(DomCells.x)+"x"+fun::UintStr(DomCells.y)+"x"+fun::UintStr(DomCells.z)+" cells (CellMode="+GetNameCellMode(CellMode)+").");
   //-Prints configurantion.
-  Log->Print(string("DomCells=(")+fun::Uint3Str(DomCells)+")");
+  Log->Print(string("DomCells=(")+fun::Uint3Str(OrderDecode(DomCells))+")");
   Log->Print(fun::VarStr("DomCellCode",fun::UintStr(PC__GetSx(DomCellCode))+"_"+fun::UintStr(PC__GetSy(DomCellCode))+"_"+fun::UintStr(PC__GetSz(DomCellCode))));
 }
 
@@ -1283,8 +1382,9 @@ void JSph::LoadCaseParticles(){
 /// Initialisation of variables and objects for execution.
 /// Inicializa variables y objetos para la ejecucion.
 //==============================================================================
-void JSph::InitRun(unsigned np,const unsigned *idp,const tdouble3 *pos){
+void JSph::InitRun(){
   const char met[]="InitRun";
+  WithFloating=(CaseNfloat>0);
   VerletStep=0;
   if(TStep==STEP_Symplectic)SymplecticDtPre=DtIni;
   if(UseDEM)DemDtForce=DtIni; //(DEM)
@@ -1339,6 +1439,7 @@ void JSph::InitRun(unsigned np,const unsigned *idp,const tdouble3 *pos){
 
   //-Prepares Damping configuration.
   if(Damping){
+    Damping->Config(CellOrder);
     Damping->VisuConfig("Damping configuration:"," ");
   }
 
@@ -1399,8 +1500,8 @@ void JSph::ConfigSaveData(unsigned piece,unsigned pieces,std::string div){
   MkInfo->ConfigPartDataHead(&parthead);
   parthead.ConfigCtes(Dp,H,CteB,RhopZero,Gamma,MassBound,MassFluid,Gravity);
   parthead.ConfigSimNp(NpDynamic,ReuseIds);
-  parthead.ConfigSimMap(MapRealPosMin,MapRealPosMax);
-  parthead.ConfigSimPeri(TpPeriFromPeriActive(PeriActive),PeriXinc,PeriYinc,PeriZinc);
+  parthead.ConfigSimMap(OrderDecode(MapRealPosMin),OrderDecode(MapRealPosMax));
+  parthead.ConfigSimPeri(PeriodicConfig.PeriMode,PeriodicConfig.PeriXinc,PeriodicConfig.PeriYinc,PeriodicConfig.PeriZinc);
   switch(TVisco){
     case VISCO_None:        parthead.ConfigVisco(JPartDataHead::VISCO_None      ,Visco,ViscoBoundFactor);  break;
     case VISCO_Artificial:  parthead.ConfigVisco(JPartDataHead::VISCO_Artificial,Visco,ViscoBoundFactor);  break;
@@ -1430,7 +1531,7 @@ void JSph::ConfigSaveData(unsigned piece,unsigned pieces,std::string div){
     DataOutBi4=new JPartOutBi4Save();
     DataOutBi4->ConfigBasic(piece,pieces,RunCode,AppName,Simulate2D,DirDataOut);
     DataOutBi4->ConfigParticles(CaseNp,CaseNfixed,CaseNmoving,CaseNfloat,CaseNfluid);
-    DataOutBi4->ConfigLimits(MapRealPosMin,MapRealPosMax,(RhopOut? RhopOutMin: 0),(RhopOut? RhopOutMax: 0));
+    DataOutBi4->ConfigLimits(OrderDecode(MapRealPosMin),OrderDecode(MapRealPosMax),(RhopOut? RhopOutMin: 0),(RhopOut? RhopOutMax: 0));
     DataOutBi4->SaveInitial();
     Log->AddFileInfo(DirDataOut+"PartOut_???.obi4","Binary file with particles excluded during simulation (input for PartVtkOut program).");
   }
@@ -1508,7 +1609,7 @@ void JSph::AbortBoundOut(unsigned nout,const unsigned *idp,const tdouble3 *pos,c
   Log->AddFileInfo(file,"Saves the excluded boundary particles.");
   JFormatFiles2::SaveVtk(file,nout,pos,fields);
   //-Aborts execution.
-  RunException("AbortBoundOut","Fixed, moving or floating particles were excluded. Check VTK file Error_BoundaryOut.vtk with excluded particles.");
+  RunException("AbortBoundOut","Fixed, moving or floating particles were excluded. Checks VTK file Error_BoundaryOut.vtk with excluded particles.");
 }
 
 //==============================================================================
@@ -1528,7 +1629,7 @@ tfloat3* JSph::GetPointerDataFloat3(unsigned n,const tdouble3* v)const{
 /// Stores files of particle data.
 /// Graba los ficheros de datos de particulas.
 //==============================================================================
-void JSph::SavePartData(unsigned npok,unsigned nout,const unsigned *idp,const tdouble3 *pos,const tfloat3 *vel,const float *rhop,unsigned ndom,const tdouble3 *vdom,const StInfoPartPlus *infoplus){
+void JSph::SavePartData(unsigned npok,unsigned nout,const unsigned *idp,const tdouble3 *pos,const tfloat3 *vel,const float *rhop, const double *temp, unsigned ndom,const tdouble3 *vdom,const StInfoPartPlus *infoplus){
   //-Stores particle data and/or information in bi4 format.
   //-Graba datos de particulas y/o informacion en formato bi4.
   if(DataBi4){
@@ -1564,6 +1665,7 @@ void JSph::SavePartData(unsigned npok,unsigned nout,const unsigned *idp,const td
         posf3=GetPointerDataFloat3(npok,pos);
         DataBi4->AddPartData(npok,idp,posf3,vel,rhop);
       }
+	  if (temp)DataBi4->AddPartData("Temp", npok, temp);//temperature: add temperature data;
       float *press=NULL;
       if(0){//-Example saving a new array (Pressure) in files BI4.
         press=new float[npok];
@@ -1607,7 +1709,8 @@ void JSph::SavePartData(unsigned npok,unsigned nout,const unsigned *idp,const td
 
   //-Stores data of floating bodies.
   if(DataFloatBi4){
-    for(unsigned cf=0;cf<FtCount;cf++)DataFloatBi4->AddPartData(cf,FtObjs[cf].center,FtObjs[cf].fvel,FtObjs[cf].fomega);
+    if(CellOrder==ORDER_XYZ)for(unsigned cf=0;cf<FtCount;cf++)DataFloatBi4->AddPartData(cf,FtObjs[cf].center,FtObjs[cf].fvel,FtObjs[cf].fomega);
+    else                    for(unsigned cf=0;cf<FtCount;cf++)DataFloatBi4->AddPartData(cf,OrderDecodeValue(CellOrder,FtObjs[cf].center),OrderDecodeValue(CellOrder,FtObjs[cf].fvel),OrderDecodeValue(CellOrder,FtObjs[cf].fomega));
     DataFloatBi4->SavePartFloat(Part,TimeStep,(UseDEM? DemDtForce: 0));
   }
 
@@ -1621,7 +1724,7 @@ void JSph::SavePartData(unsigned npok,unsigned nout,const unsigned *idp,const td
 /// Genera los ficheros de salida de datos.
 //==============================================================================
 void JSph::SaveData(unsigned npok,const unsigned *idp,const tdouble3 *pos,const tfloat3 *vel,const float *rhop
-  ,unsigned ndom,const tdouble3 *vdom,const StInfoPartPlus *infoplus)
+  , const double *temp, unsigned ndom,const tdouble3 *vdom,const StInfoPartPlus *infoplus)
 {
   const char met[]="SaveData";
   string suffixpartx=fun::PrintStr("_%04d",Part);
@@ -1634,7 +1737,7 @@ void JSph::SaveData(unsigned npok,const unsigned *idp,const tdouble3 *pos,const 
   AddOutCount(noutpos,noutrhop,noutmove);
 
   //-Stores data files of particles.
-  SavePartData(npok,nout,idp,pos,vel,rhop,ndom,vdom,infoplus);
+  SavePartData(npok,nout,idp,pos,vel,rhop,temp,ndom,vdom,infoplus);
 
   //-Reinitialises limits of dt. | Reinicia limites de dt.
   PartDtMin=DBL_MAX; PartDtMax=-DBL_MAX;
@@ -1660,7 +1763,7 @@ void JSph::SaveData(unsigned npok,const unsigned *idp,const tdouble3 *pos,const 
   //-Cheks number of excluded particles.
   if(nout){
     //-Cheks number of excluded particles in one PART.
-    if(PartsOutWrn<=100 && nout>=float(infoplus->npf)*(float(PartsOutWrn)/100.f)){
+    if(nout>=float(infoplus->npf)*(float(PartsOutWrn)/100.f)){
       Log->PrintfWarning("More than %d%% of current fluid particles were excluded in one PART (t:%g, nstep:%u)",PartsOutWrn,TimeStep,Nstep);
       if(PartsOutWrn==1)PartsOutWrn=2;
       else if(PartsOutWrn==2)PartsOutWrn=5;
@@ -1669,7 +1772,7 @@ void JSph::SaveData(unsigned npok,const unsigned *idp,const tdouble3 *pos,const 
     }
     //-Cheks number of total excluded particles.
     const unsigned noutt=GetOutPosCount()+GetOutRhopCount()+GetOutMoveCount();
-    if(PartsOutTotWrn<=100 && noutt>=float(TotalNp)*(float(PartsOutTotWrn)/100.f)){
+    if(PartsOutTotWrn<100 && noutt>=float(TotalNp)*(float(PartsOutTotWrn)/100.f)){
       Log->PrintfWarning("More than %d%% of particles were excluded (t:%g, nstep:%u)",PartsOutTotWrn,TimeStep,Nstep);
       PartsOutTotWrn+=10;
     }
@@ -1723,7 +1826,7 @@ void JSph::SaveInitialDomainVtk()const{
 /// Devuelve tamaño de fichero VTK con las celdas del mapa.
 //==============================================================================
 unsigned JSph::SaveMapCellsVtkSize()const{
-  const tuint3 cells=Map_Cells;
+  const tuint3 cells=OrderDecode(Map_Cells);
   unsigned nlin=cells.x+cells.z+2;//-Back lines.
   if(!Simulate2D){
     nlin+=cells.x+cells.y+2;//-Bottom lines.
@@ -1738,8 +1841,8 @@ unsigned JSph::SaveMapCellsVtkSize()const{
 /// Genera fichero VTK con las celdas del mapa.
 //==============================================================================
 void JSph::SaveMapCellsVtk(float scell)const{
-  const tuint3 cells=Map_Cells;
-  tdouble3 pmin=MapRealPosMin;
+  const tuint3 cells=OrderDecode(Map_Cells);
+  tdouble3 pmin=OrderDecode(MapRealPosMin);
   tdouble3 pmax=pmin+TDouble3(scell*cells.x,scell*cells.y,scell*cells.z);
   if(Simulate2D)pmin.y=pmax.y=Simulate2DPosY;
   //-Creates lines.

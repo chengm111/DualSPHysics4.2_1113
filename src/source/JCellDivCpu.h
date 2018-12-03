@@ -44,6 +44,7 @@ protected:
   const bool Stable;
   const bool Floating;
   const byte PeriActive;
+  const TpCellOrder CellOrder;
   const TpCellMode CellMode;    ///<Mode of cell division. | Modo de division en celdas.
   const unsigned Hdiv;          ///<Value for those divided in DosH. | Valor por el que se divide a DosH.
   const float Scell,OvScell;
@@ -83,6 +84,7 @@ protected:
   word        *VSortWord;        ///<To order word vectors (write to VSort). | Para ordenar vectores word (apunta a VSort).
   int         *VSortInt;         ///<To order vectors int (write to VSort). | Para ordenar vectores int (apunta a VSort).
   float       *VSortFloat;       ///<To order vectors float (write to VSort). | Para ordenar vectores float (apunta a VSort).
+  double      *VSortDouble;
   tfloat3     *VSortFloat3;      ///<To order vectors tfloat3 (write to VSort). | Para ordenar vectores tfloat3 (apunta a VSort).
   tfloat4     *VSortFloat4;      ///<To order vectors tfloat4 (write to VSort). | Para ordenar vectores tfloat4 (apunta a VSort).
   tdouble3    *VSortDouble3;     ///<To order vectors tdouble3 (write to VSort). | Para ordenar vectores tdouble3 (apunta a VSort).
@@ -148,10 +150,7 @@ protected:
   unsigned CellSize(unsigned box)const{ return(BeginCell[box+1]-BeginCell[box]); }
 
 public:
-  JCellDivCpu(bool stable,bool floating,byte periactive
-    ,TpCellMode cellmode,float scell,tdouble3 mapposmin,tdouble3 mapposmax,tuint3 mapcells
-    ,unsigned casenbound,unsigned casenfixed,unsigned casenpb,JLog2 *log,std::string dirout
-    ,bool allocfullnct=true,float overmemorynp=CELLDIV_OVERMEMORYNP,word overmemorycells=CELLDIV_OVERMEMORYCELLS);
+  JCellDivCpu(bool stable,bool floating,byte periactive,TpCellOrder cellorder,TpCellMode cellmode,float scell,tdouble3 mapposmin,tdouble3 mapposmax,tuint3 mapcells,unsigned casenbound,unsigned casenfixed,unsigned casenpb,JLog2 *log,std::string dirout,bool allocfullnct=true,float overmemorynp=CELLDIV_OVERMEMORYNP,word overmemorycells=CELLDIV_OVERMEMORYCELLS);
   ~JCellDivCpu();
 
   void DefineDomain(unsigned cellcode,tuint3 domcelini,tuint3 domcelfin,tdouble3 domposmin,tdouble3 domposmax);
@@ -159,6 +158,7 @@ public:
   void SortArray(word *vec);
   void SortArray(unsigned *vec);
   void SortArray(float *vec);
+  void SortArray(double *vec);
   void SortArray(tdouble3 *vec);
   void SortArray(tfloat3 *vec);
   void SortArray(tfloat4 *vec);

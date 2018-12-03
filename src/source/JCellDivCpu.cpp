@@ -29,11 +29,11 @@ using namespace std;
 //==============================================================================
 /// Constructor.
 //==============================================================================
-JCellDivCpu::JCellDivCpu(bool stable,bool floating,byte periactive
+JCellDivCpu::JCellDivCpu(bool stable,bool floating,byte periactive,TpCellOrder cellorder
   ,TpCellMode cellmode,float scell,tdouble3 mapposmin,tdouble3 mapposmax,tuint3 mapcells
   ,unsigned casenbound,unsigned casenfixed,unsigned casenpb,JLog2 *log,std::string dirout
   ,bool allocfullnct,float overmemorynp,word overmemorycells)
-  :Stable(stable),Floating(floating),PeriActive(periactive)
+  :Stable(stable),Floating(floating),PeriActive(periactive),CellOrder(cellorder)
   ,CellMode(cellmode),Hdiv(cellmode==CELLMODE_2H? 1: (cellmode==CELLMODE_H? 2: 0)),Scell(scell)
   ,OvScell(1.f/scell),Map_PosMin(mapposmin),Map_PosMax(mapposmax),Map_PosDif(mapposmax-mapposmin)
   ,Map_Cells(mapcells),CaseNbound(casenbound),CaseNfixed(casenfixed),CaseNpb(casenpb),Log(log)
@@ -120,6 +120,7 @@ void JCellDivCpu::SetMemoryVSort(byte *vsort){
   VSortFloat=(float*)VSort;    VSortFloat3=(tfloat3*)VSort;
   VSortFloat4=(tfloat4*)VSort; VSortDouble3=(tdouble3*)VSort;
   VSortSymmatrix3f=(tsymatrix3f*)VSort;
+  VSortDouble = (double*)VSort;//temperature;
 }
 
 //==============================================================================
@@ -389,6 +390,20 @@ void JCellDivCpu::SortArray(float *vec){
   for(int p=ini;p<n;p++)VSortFloat[p]=vec[SortPart[p]];
   memcpy(vec+ini,VSortFloat+ini,sizeof(float)*(n-ini));
 }
+
+//===============================================================
+//temperature: Reorder values of all particles (for type double).
+//===============================================================
+void JCellDivCpu::SortArray(double *vec) {
+	const int n = int(Nptot);
+	const int ini = (DivideFull ? 0 : int(NpbFinal));
+#ifdef OMP_USE
+#pragma omp parallel for schedule (static) if(n>OMP_LIMIT_COMPUTELIGHT)
+#endif
+	for (int p = ini; p<n; p++)VSortDouble[p] = vec[SortPart[p]];
+	memcpy(vec + ini, VSortDouble + ini, sizeof(double)*(n - ini));
+}
+
 
 //==============================================================================
 /// Reorder values of all particles (for type tdouble3).

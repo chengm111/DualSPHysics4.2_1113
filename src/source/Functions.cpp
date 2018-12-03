@@ -37,8 +37,6 @@
 
 #pragma warning(disable : 4996) //Cancels sprintf() deprecated.
 
-using namespace std;
-
 namespace fun{
 
 //==============================================================================
@@ -258,7 +256,7 @@ std::string Float3Str(const tfloat3 &v,const char* fmt){
 /// Converts real value to string.
 //==============================================================================
 std::string DoubleStr(double v,const char* fmt){
-  char cad[512];
+  char cad[256];
   sprintf(cad,fmt,v);
   return(std::string(cad));
 }
@@ -267,7 +265,7 @@ std::string DoubleStr(double v,const char* fmt){
 /// Converts real value to string (-DBL_MAX=MIN and DBL_MAX=MAX).
 //==============================================================================
 std::string DoublexStr(double v,const char* fmt){
-  char cad[512];
+  char cad[128];
   sprintf(cad,fmt,v);
   return(v==-DBL_MAX? std::string("MIN"): (v==DBL_MAX? std::string("MAX"): std::string(cad)));
 }
@@ -276,7 +274,7 @@ std::string DoublexStr(double v,const char* fmt){
 /// Converts real value to string.
 //==============================================================================
 std::string Double3Str(const tdouble3 &v,const char* fmt){
-  char cad[2048];
+  char cad[1024];
   sprintf(cad,fmt,v.x,v.y,v.z);
   return(std::string(cad));
 }
@@ -285,7 +283,7 @@ std::string Double3Str(const tdouble3 &v,const char* fmt){
 /// Converts real value to string.
 //==============================================================================
 std::string Double4Str(const tdouble4 &v,const char* fmt){
-  char cad[2048];
+  char cad[1024];
   sprintf(cad,fmt,v.x,v.y,v.z,v.w);
   return(std::string(cad));
 }
@@ -354,28 +352,6 @@ std::string StrTrim(const std::string &cad){
   for(int c=int(cad.length())-1;c<int(cad.length())&&cad[c]==' ';c--)rsp++;
   int size=int(cad.length())-(lsp+rsp);
   return(size>0? cad.substr(lsp,size): "");
-}
-
-//==============================================================================
-/// Gets string without spaces at the beginning.
-//==============================================================================
-std::string StrTrimBegin(const std::string &cad){
-  std::string ret;
-  int lsp=0;
-  for(int c=0;c<int(cad.length())&&cad[c]==' ';c++)lsp++;
-  int size=int(cad.length())-(lsp);
-  return(size>0? cad.substr(lsp,size): "");
-}
-
-//==============================================================================
-/// Gets string without spaces at the end.
-//==============================================================================
-std::string StrTrimEnd(const std::string &cad){
-  std::string ret;
-  int rsp=0;
-  for(int c=int(cad.length())-1;c<int(cad.length())&&cad[c]==' ';c--)rsp++;
-  int size=int(cad.length())-(rsp);
-  return(size>0? cad.substr(0,size): "");
 }
 
 //==============================================================================
@@ -495,60 +471,6 @@ bool StrOnlyChars(const std::string &cad,const std::string &chars){
     if(c2>=nc)ok=false;
   }
   return(ok);
-}
-
-//==============================================================================
-/// Loads lines from text file. Returns error code (0 no error).
-//==============================================================================
-int StrFileToVector(const std::string &file,std::vector<std::string> &lines){
-  int error=0;
-  ifstream pf;
-  pf.open(file.c_str());
-  if(pf){
-    while(!pf.eof() && !error){
-      char buff[2048];
-      pf.getline(buff,2048);
-      string tx=buff;
-      lines.push_back(tx);
-    } 
-    if(!pf.eof()&&pf.fail())error=1; //-Error: Failure reading data from file.
-    pf.close();
-  }
-  else error=2; //-Error: Cannot open the file.
-  return(error);
-}
-
-//==============================================================================
-/// Saves lines in a new text file. Returns error code (0 no error).
-//==============================================================================
-int StrVectorToFile(const std::string &file,const std::vector<std::string> &lines){
-  int error=0;
-  fstream pf;
-  pf.open(file.c_str(),ios::binary|ios::out);
-  if(!pf)error=3; //-Error: File could not be opened.
-  else{
-    const unsigned rows=unsigned(lines.size());
-    for(unsigned r=0;r<rows && !error;r++){
-      string tx=lines[r]+"\n";
-      pf.write(tx.c_str(),tx.size());
-      if(pf.fail())error=4; //-Error: File writing failure.
-    }
-    pf.close();
-  }
-  return(error);
-}
-
-//==============================================================================
-/// Returns error code from StrFileToVector() or StrVectorToFile() in string.
-//==============================================================================
-std::string StrFileError(int error){
-  switch(error){
-    case 1: return("Error: Failure reading data from file.");
-    case 2: return("Error: Cannot open the file.");
-    case 3: return("Error: File could not be opened.");
-    case 4: return("Error: File writing failure.");
-  }
-  return("Error: ???");
 }
 
 //==============================================================================
@@ -1039,12 +961,9 @@ bool FileMask(std::string text,std::string mask){
 //==============================================================================
 int CpyFile(std::string src,const std::string dest){
   std::ifstream fsrc(src.c_str(),std::ios::binary);
-  if(fsrc){
-    std::ofstream fdest(dest.c_str(),std::ios::binary);
-    fdest << fsrc.rdbuf();
-    return(fsrc && fdest? 0: 1);
-  }
-  return(1);
+  std::ofstream fdest(dest.c_str(),std::ios::binary);
+  fdest << fsrc.rdbuf();
+  return(fsrc && fdest? 0: 1);
 }
 
 
@@ -1125,14 +1044,6 @@ tuint3* ResizeAlloc(tuint3 *data,unsigned ndata,unsigned newsize){
   tuint3* data2=new tuint3[newsize];
   ndata=std::min(ndata,newsize);
   if(ndata)memcpy(data2,data,sizeof(tuint3)*ndata);
-  delete[] data;
-  return(data2);
-}
-//==============================================================================
-tuint4* ResizeAlloc(tuint4 *data,unsigned ndata,unsigned newsize){
-  tuint4* data2=new tuint4[newsize];
-  ndata=std::min(ndata,newsize);
-  if(ndata)memcpy(data2,data,sizeof(tuint4)*ndata);
   delete[] data;
   return(data2);
 }

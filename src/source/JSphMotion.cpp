@@ -22,7 +22,6 @@
 #include "JSpaceParts.h"
 #include "JMotion.h"
 #include "JXml.h"
-#include <climits>
 
 using namespace std;
 
@@ -56,7 +55,6 @@ void JSphMotion::Reset(){
   delete[] ObjBegin;   ObjBegin=NULL;
   delete[] ObjMkBound; ObjMkBound=NULL;
   delete Mot; Mot=NULL;
-  ActiveMotion=false;
 }
 
 //==============================================================================
@@ -127,23 +125,12 @@ unsigned JSphMotion::GetObjSize(unsigned idx)const{
 }
 
 //==============================================================================
-/// Returns Idx of requested moving object accoring to MkBound.
-/// Returns UINT_MAX when it was not found.
-//==============================================================================
-unsigned JSphMotion::GetObjIdxByMkBound(word mkbound)const{
-  unsigned idx=0;
-  for(;idx<GetNumObjects() && GetObjMkBound(idx)!=mkbound;idx++);
-  return(idx<GetNumObjects()? idx: UINT_MAX);
-}
-
-//==============================================================================
 /// Processes next time interval and returns true if there are active motions.
 //==============================================================================
 bool JSphMotion::ProcesTime(TpMotionMode mode,double timestep,double dt){
-  ActiveMotion=false;
-  if(mode==MOMT_Simple)ActiveMotion=Mot->ProcesTimeSimple(timestep+TimeMod,dt);
-  if(mode==MOMT_Ace2dt)ActiveMotion=Mot->ProcesTimeAce(timestep+TimeMod,dt);
-  return(ActiveMotion);
+  if(mode==MOMT_Simple)return(Mot->ProcesTimeSimple(timestep+TimeMod,dt));
+  if(mode==MOMT_Ace2dt)return(Mot->ProcesTimeAce(timestep+TimeMod,dt));
+  return(false);
 }
 
 //==============================================================================
@@ -158,17 +145,6 @@ bool JSphMotion::ProcesTimeGetData(unsigned ref,bool &typesimple,tdouble3 &simpl
     idbegin=(ref<ObjCount? ObjBegin[ref]: 0);
     nparts=(ref<ObjCount? ObjBegin[ref+1]-idbegin: 0);
   }
-  return(active);
-}
-
-//==============================================================================
-/// Returns data of one moving object. Returns true when the motion is active.
-//==============================================================================
-bool JSphMotion::ProcesTimeGetData(unsigned ref,word &mkbound
-  ,bool &typesimple,tdouble3 &simplemov,tmatrix4d &matmov)const
-{
-  mkbound=GetObjMkBound(ref);
-  const bool active=Mot->ProcesTimeGetData(ref,typesimple,simplemov,matmov);
   return(active);
 }
 

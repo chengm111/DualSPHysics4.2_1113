@@ -66,16 +66,7 @@
 //:# - New functions to create shapes in VTK files. (25-01-2018)
 //:# - Functions to create VTK/CSV files starting from vector<StScalarData>. (25-01-2018)
 //:# - Se escriben las unidades en las cabeceras de los ficheros CSV. (26-04-2018)
-//:# - Nuevo metodo AddShape_Sphere() para generar esferas a partir de quads. (06-07-2018)
-//:# - Nuevos metodos CreateShapesMk(), DeleteShapesMk() y CreateOBJsByMk(). (06-08-2018)
-//:# - Nuevos metodos AddShape_Cylinder(), AddShape_Cross(). (10-08-2018)
-//:# - Nuevos metodos AddShape_Circle(), AddShape_Spring(). (13-08-2018)
-//:# - El metodo SaveVtkShapes() combina lineas consecutivas con mismos valores. (13-08-2018)
-//:# - Se permite definir formato de salida y unidades en StScalarData. (12-09-2018)
-//:# - Nuevo metodo DeleteFields() para liberar memoria dinamica. (12-09-2018)
-//:# - Se elimina codigo JFormatFiles2Data por falta de uso. (12-09-2018)
 //:#############################################################################
-  
 
 /// \file JFormatFiles2.h \brief Declares the class \ref JFormatFiles2.
 
@@ -98,21 +89,14 @@ class JFormatFiles2
 {
 public:
 
-  /// Modes to define the normals.
-  typedef enum{ NorNULL,NorOriginal,NorInvert,NorTwoFace }TpModeNormal; 
-
-  /// Data types.
   typedef enum{ UChar8,Char8,UShort16,Short16,UInt32,Int32,Float32,Double64,ULlong64,Llong64,TpDataNull }TpData;
 
   /// Structure with the information of an array of particle data to be stored in CSV or VTK format.
   typedef struct {
-    std::string name; //"name:outputformat:units", e.g. "velocity:%f:m/s"
-    std::string fmt;
-    std::string units;
+    std::string name;
     TpData type;
     unsigned comp;
     const void *pointer;
-    bool delptr;
   }StScalarData;
 
   /// Strucutre with the information of an array to calculate and save statistic information.
@@ -134,7 +118,7 @@ public:
   }StStatistics;
 
   /// Types of shape.
-  typedef enum{ ShLine,ShTriangle,ShQuad,ShBox,ShSphere,ShNull }TpShape;
+  typedef enum{ ShLine,ShTriangle,ShQuad,ShBox,ShNull }TpShape;
 
   /// Structure with data of one shape to be stored in VTK format.
   typedef struct StrShapeData{
@@ -143,42 +127,11 @@ public:
     int value;
     float valuef;
     StrShapeData(){ reset(); }
-    StrShapeData(TpShape tsh,int vi,float vf,tfloat3 p0=TFloat3(0)
-      ,tfloat3 p1=TFloat3(0),tfloat3 p2=TFloat3(0),tfloat3 p3=TFloat3(0)
-      ,tfloat3 p4=TFloat3(0),tfloat3 p5=TFloat3(0),tfloat3 p6=TFloat3(0)
-      ,tfloat3 p7=TFloat3(0))
-    { 
-      reset(); tshape=tsh; value=vi; valuef=vf; vpt[0]=p0; vpt[1]=p1; 
-      vpt[2]=p2; vpt[3]=p3; vpt[4]=p4; vpt[5]=p5; vpt[6]=p6; vpt[7]=p7;
+    StrShapeData(TpShape tsh,int vi,float vf,tfloat3 p0=TFloat3(0),tfloat3 p1=TFloat3(0),tfloat3 p2=TFloat3(0),tfloat3 p3=TFloat3(0),tfloat3 p4=TFloat3(0),tfloat3 p5=TFloat3(0),tfloat3 p6=TFloat3(0),tfloat3 p7=TFloat3(0)){ 
+      reset(); tshape=tsh; value=vi; valuef=vf; vpt[0]=p0; vpt[1]=p1; vpt[2]=p2; vpt[3]=p3; vpt[4]=p4; vpt[5]=p5; vpt[6]=p6; vpt[7]=p7;
     }
-    void reset(){ 
-      tshape=ShNull; for(unsigned c=0;c<8;c++)vpt[c]=TFloat3(0);
-      value=0; valuef=0; 
-    }
+    void reset(){ tshape=ShNull; for(unsigned c=0;c<8;c++)vpt[c]=TFloat3(0); value=0; valuef=0; }
   }StShapeData;
-
-  /// Structure with parameters to create spring.
-  typedef struct StrShapeSpring{
-    float cornersout; //-Size of corner.
-    float cornersin;  //-Size of corner (inside).
-    float radius;     //-Spring radius.
-    float length;     //-Length for each revolution.
-    int nside;        //-Number of sections for each revolution.
-
-    StrShapeSpring(){ reset(); }
-    StrShapeSpring(float xcornersout,float xcornersin,float xradius,float xlength,int xnside)
-    { 
-      reset(); cornersout=xcornersout; cornersin=xcornersin; 
-      radius=xradius; length=xlength; nside=xnside;
-    }
-    void reset(){ 
-      cornersout=0.75f;
-      cornersin=0.25f;
-      radius=3;
-      length=1.f;
-      nside=16;
-    }
-  }StShapeSpring;
 
 
   //==============================================================================
@@ -198,27 +151,17 @@ public:
   static std::string GetUnits(const std::string &varname);
 
   //==============================================================================
-  /// Defines automatically the output format and units of field.
+  /// Returns units according variable name. E.g.: Vel -> "Vel [m/s]"
   //==============================================================================
-  static void DefineFieldFormat(StScalarData &field);
-
-  //==============================================================================
-  /// Returns the definition of fields.
-  //==============================================================================
-  static StScalarData DefineField(const std::string &name,TpData type,unsigned comp,const void *pointer=NULL){
-    StScalarData f; f.name=name; f.type=type; f.comp=comp; f.pointer=pointer; f.delptr=false;
-    f.fmt=f.units="";
-    DefineFieldFormat(f);
-    return(f);
+  static std::string GetVarWithUnits(const std::string &varname){
+    return(varname+GetUnits(varname));
   }
 
   //==============================================================================
   /// Returns the definition of fields.
   //==============================================================================
-  static StScalarData DefineFieldDel(const std::string &name,TpData type,unsigned comp,const void *pointer=NULL){
-    StScalarData f; f.name=name; f.type=type; f.comp=comp; f.pointer=pointer; f.delptr=true;
-    f.fmt=f.units="";
-    DefineFieldFormat(f);
+  static StScalarData DefineField(const std::string &name,TpData type,unsigned comp,const void *pointer=NULL){
+    StScalarData f; f.name=name; f.type=type; f.comp=comp; f.pointer=pointer;
     return(f);
   }
 
@@ -231,11 +174,6 @@ public:
   /// Checks the definition of fields.
   //==============================================================================
   static void CheckFields(const std::vector<StScalarData> &fields);
-
-  //==============================================================================
-  /// Delete dynamic memory of pointers with delptr=true.
-  //==============================================================================
-  static void DeleteFields(std::vector<StScalarData> &fields);
 
   //==============================================================================
   /// Stores data in VTK format.
@@ -625,112 +563,14 @@ public:
   }
 
   //==============================================================================
-  /// Adds triangles/lines for the definition of a circle/circumference.
-  //==============================================================================
-  static void AddShape_Circle(std::vector<StShapeData> &shapes,bool circle
-    ,const tfloat3 &pt,float radius,const tfloat3 &vec,int nside,int value,float valuef);
-  //==============================================================================
-  /// Adds triangles/lines for the definition of a circle/circumference.
-  //==============================================================================
-  static void AddShape_Circle(std::vector<StShapeData> &shapes,bool circle
-    ,const tdouble3 &pt,double radius,const tdouble3 &vec,int nside,int value,float valuef)
-  {
-    AddShape_Circle(shapes,circle,ToTFloat3(pt),float(radius),ToTFloat3(vec),nside,value,valuef);
-  }
-
-  //==============================================================================
-  /// Adds quads for the definition of a sphere.
-  //==============================================================================
-  static void AddShape_Sphere(std::vector<StShapeData> &shapes
-    ,const tfloat3 &pt,float radius,int nside,int value,float valuef);
-  //==============================================================================
-  /// Adds quads for the definition of a sphere.
-  //==============================================================================
-  static void AddShape_Sphere(std::vector<StShapeData> &shapes
-    ,const tdouble3 &pt,double radius,int nside,int value,float valuef)
-  {
-    AddShape_Sphere(shapes,ToTFloat3(pt),float(radius),nside,value,valuef);
-  }
-
-  //==============================================================================
-  /// Adds triangles and quads for the definition of a cylinder.
-  //==============================================================================
-  static void AddShape_Cylinder(std::vector<JFormatFiles2::StShapeData> &shapes
-    ,const tfloat3 &p1,const tfloat3 &p2,float radius,int nside,unsigned maskfaceshide,int value,float valuef);
-  //==============================================================================
-  /// Adds triangles and quads for the definition of a cylinder.
-  //==============================================================================
-  static void AddShape_Cylinder(std::vector<StShapeData> &shapes
-    ,const tdouble3 &p1,const tdouble3 &p2,double radius,int nside,unsigned maskfaceshide,int value,float valuef)
-  {
-    AddShape_Cylinder(shapes,ToTFloat3(p1),ToTFloat3(p2),float(radius),nside,maskfaceshide,value,valuef);
-  }
-
-  //==============================================================================
-  /// Adds lines for the definition of a cross.
-  //==============================================================================
-  static void AddShape_Cross(std::vector<StShapeData> &shapes
-    ,const tfloat3 &pt,float radius,int value,float valuef)
-  {
-    shapes.push_back(DefineShape_Line(TFloat3(pt.x-radius,pt.y,pt.z),TFloat3(pt.x+radius,pt.y,pt.z),value,valuef));
-    shapes.push_back(DefineShape_Line(TFloat3(pt.x,pt.y-radius,pt.z),TFloat3(pt.x,pt.y+radius,pt.z),value,valuef));
-    shapes.push_back(DefineShape_Line(TFloat3(pt.x,pt.y,pt.z-radius),TFloat3(pt.x,pt.y,pt.z+radius),value,valuef));
-  }
-  //==============================================================================
-  /// Adds lines for the definition of a cross.
-  //==============================================================================
-  static void AddShape_Cross(std::vector<StShapeData> &shapes
-    ,const tdouble3 &pt,double radius,int value,float valuef)
-  {
-    AddShape_Cross(shapes,ToTFloat3(pt),float(radius),value,valuef);
-  }
-  
-  //==============================================================================
-  /// Adds lines for the definition of a spring.
-  //==============================================================================
-  static void AddShape_Spring(std::vector<StShapeData> &shapes
-    ,const tfloat3 &pt1,const tfloat3 &p2,float restlength,float scalesize
-    ,StShapeSpring config,int value,float valuef);
-  //==============================================================================
-  /// Adds lines for the definition of a spring.
-  //==============================================================================
-  static void AddShape_Spring(std::vector<StShapeData> &shapes
-    ,const tdouble3 &pt1,const tdouble3 &pt2,double restlength,double scalesize
-    ,StShapeSpring config,int value,float valuef)
-  {
-    AddShape_Spring(shapes,ToTFloat3(pt1),ToTFloat3(pt2),float(restlength),float(scalesize),config,value,valuef);
-  }
-
-  //==============================================================================
   /// Generates a VTK file with shapes.
   //============================================================================== 
   static void SaveVtkShapes(std::string fname,const std::string &valuename
     ,const std::string &valuefname,const std::vector<StShapeData> &shapes);
 
-
-  //##############################################################################
-  //# Functions to create OBJ files starting from VTK files.
-  //##############################################################################
-  //==============================================================================
-  /// Creates object with geometry (triangles and quads) and mk data from VTK files.
-  //==============================================================================
-  static void* CreateShapesMk(const std::vector<std::string> &vtkfiles);
-
-  //==============================================================================
-  /// Frees object with geometry and mk data from VTK files.
-  //==============================================================================
-  static void DeleteShapesMk(void* ptr_vtksimple);
-
-
-  //==============================================================================
-  /// Creates OBJ file with MK geometry in VTK file. Returns not zero in case of error.
-  //==============================================================================
-  static void CreateOBJsByMk(void* ptr_vtksimple,std::string filein,std::string filesout
-    ,const std::vector<unsigned> &mkbounds,unsigned mkboundfirst,TpModeNormal normalmode);
-
 };
 
-/*
+
 //##############################################################################
 //# JFormatFiles2Data
 //##############################################################################
@@ -825,7 +665,7 @@ public:
     if(Posd)JFormatFiles2::SaveCsv(file,CsvSepComa,Np,Posd,FieldsCount,Fields);
   }
 };
-*/
+
 
 #endif
 

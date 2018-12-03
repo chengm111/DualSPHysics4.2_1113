@@ -58,11 +58,10 @@ protected:
     ,int hdiv,const tint4 &nc,const tint3 &cellzero
     ,int &cxini,int &cxfin,int &yini,int &yfin,int &zini,int &zfin)const;
 
-  void Interaction_Forces(TpInterStep tinterstep);
+  void Interaction_Forces(TpInter tinter);
   
-  double ComputeAceMax(unsigned np,const tfloat3* ace,const typecode *code)const;
-  template<bool checkperiodic> double ComputeAceMaxSeq(unsigned np,const tfloat3* ace,const typecode *code)const;
-  template<bool checkperiodic> double ComputeAceMaxOmp(unsigned np,const tfloat3* ace,const typecode *code)const;
+  template<bool checkcodenormal> double ComputeAceMaxSeq(unsigned np,const tfloat3* ace,const typecode *code)const;
+  template<bool checkcodenormal> double ComputeAceMaxOmp(unsigned np,const tfloat3* ace,const typecode *code)const;
   
   double ComputeStep(){ return(TStep==STEP_Verlet? ComputeStep_Ver(): ComputeStep_Sym()); }
   double ComputeStep_Ver();

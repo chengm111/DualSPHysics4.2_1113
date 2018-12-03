@@ -75,13 +75,6 @@ public:
   TiXmlNode* GetNode(const std::string &path,bool createpath=false);
 
   //==============================================================================
-  /// Returns the requested node.
-  /// \param path Path of the requested node.
-  /// otherwise returns \a NULL.
-  //==============================================================================
-  TiXmlNode* GetNodeSimple(const std::string &path)const;
-
-  //==============================================================================
   /// Returns the root node.
   //==============================================================================
   TiXmlNode* GetNodeRoot(){ return(Doc); }

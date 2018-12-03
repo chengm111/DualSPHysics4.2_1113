@@ -72,6 +72,7 @@ public:
 
 private:
   JLog2* Log;
+  TpCellOrder CellOrder;
   std::vector<StDamping> List;
 
   void ReadXml(JXml *sxml,TiXmlElement* ele);
@@ -83,6 +84,7 @@ public:
   ~JDamping();
   void Reset();
 
+  void Config(TpCellOrder cellorder);
   void LoadXml(JXml *sxml,const std::string &place);
   void VisuConfig(std::string txhead,std::string txfoot);
 

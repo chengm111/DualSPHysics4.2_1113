@@ -120,9 +120,7 @@ void JMotionListData::Ace2_PosMotion(double dt){
 //==============================================================================
 /// Returns data of one moving object. Returns true when the motion is active.
 //==============================================================================
-bool JMotionListData::GetData(bool &typesimple,tdouble3 &simplemov,tdouble3 &simplevel
-  ,tdouble3 &simpleace,tmatrix4d &matmov,tmatrix4d &matmov2)const
-{
+bool JMotionListData::GetData(bool &typesimple,tdouble3 &simplemov,tdouble3 &simplevel,tdouble3 &simpleace,tmatrix4d &matmov,tmatrix4d &matmov2)const{
   if(Active){
     if(typesimple=TypeSimple){
       simplemov=MvSimple1;
@@ -132,22 +130,6 @@ bool JMotionListData::GetData(bool &typesimple,tdouble3 &simplemov,tdouble3 &sim
     else{
       matmov=MvMatrix1;
       matmov2=MvMatrix2;
-    }
-  }
-  return(Active);
-}
-
-//==============================================================================
-/// Returns data of one moving object. Returns true when the motion is active.
-//==============================================================================
-bool JMotionListData::GetData(bool &typesimple,tdouble3 &simplemov,tmatrix4d &matmov)const
-{
-  if(Active){
-    if(typesimple=TypeSimple){
-      simplemov=MvSimple1;
-    }
-    else{
-      matmov=MvMatrix1;
     }
   }
   return(Active);
@@ -177,20 +159,9 @@ JMotionList::~JMotionList(){
 //==============================================================================
 /// Returns data of one moving object. Returns true when the motion is active.
 //==============================================================================
-bool JMotionList::GetData(unsigned ref,bool &typesimple,tdouble3 &simplemov
-  ,tdouble3 &simplevel,tdouble3 &simpleace,tmatrix4d &matmov,tmatrix4d &matmov2)const
-{
+bool JMotionList::GetData(unsigned ref,bool &typesimple,tdouble3 &simplemov,tdouble3 &simplevel,tdouble3 &simpleace,tmatrix4d &matmov,tmatrix4d &matmov2)const{
   if(ref>=Nref)RunException("GetData","Reference is invalid.");
   return(MotionData[ref].GetData(typesimple,simplemov,simplevel,simpleace,matmov,matmov2));
-}
-
-//==============================================================================
-/// Returns data of one moving object. Returns true when the motion is active.
-//==============================================================================
-bool JMotionList::GetData(unsigned ref,bool &typesimple,tdouble3 &simplemov,tmatrix4d &matmov)const
-{
-  if(ref>=Nref)RunException("GetData","Reference is invalid.");
-  return(MotionData[ref].GetData(typesimple,simplemov,matmov));
 }
 
 
